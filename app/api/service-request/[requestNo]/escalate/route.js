@@ -1,5 +1,5 @@
 import { auth } from '@/auth';
-import { loadStore, EMAIL_REGEX } from '@/lib/store';
+import { getRequestByNo, EMAIL_REGEX } from '@/lib/store';
 import { sendIssueEmail } from '@/lib/email';
 
 export const runtime = 'nodejs';
@@ -19,8 +19,7 @@ export async function POST(req, { params }) {
   if (!explanation) return Response.json({ error: 'Please describe the issue.' }, { status: 400 });
   if (to && !EMAIL_REGEX.test(to)) return Response.json({ error: 'Recipient email is not valid.' }, { status: 400 });
 
-  const store = loadStore();
-  const record = store.requests.find((r) => r.requestNo === requestNo);
+  const record = await getRequestByNo(requestNo);
   if (!record) return Response.json({ error: 'Request not found.' }, { status: 404 });
 
   try {

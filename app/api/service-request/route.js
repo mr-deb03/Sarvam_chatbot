@@ -1,12 +1,4 @@
-import {
-  REQUEST_TYPES,
-  TAT_HOURS,
-  PAN_REGEX,
-  EMAIL_REGEX,
-  loadStore,
-  saveStore,
-  makeRequestNo,
-} from '@/lib/store';
+import { REQUEST_TYPES, TAT_HOURS, PAN_REGEX, EMAIL_REGEX, createRequest } from '@/lib/store';
 import { sendRequestEmail } from '@/lib/email';
 
 export const runtime = 'nodejs';
@@ -28,24 +20,7 @@ export async function POST(req) {
   if (!REQUEST_TYPES.includes(requestType)) errors.push('A valid request type is required.');
   if (errors.length) return Response.json({ errors }, { status: 400 });
 
-  const now = new Date();
-  const store = loadStore();
-  store.seq += 1;
-
-  const record = {
-    requestNo: makeRequestNo(store.seq, now),
-    clientName,
-    email,
-    pan,
-    requestType,
-    detail,
-    status: 'Open',
-    createdAt: now.toISOString(),
-    dueAt: new Date(now.getTime() + TAT_HOURS * 3600 * 1000).toISOString(),
-  };
-
-  store.requests.push(record);
-  saveStore(store);
+  const record = await createRequest({ clientName, email, pan, requestType, detail });
 
   // Best-effort email — never let an email failure block the submission.
   let emailed = false;
