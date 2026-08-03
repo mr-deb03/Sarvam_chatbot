@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# env & local data
+.env
+.env*.local
+data/
+
+# client data exports (contain PII — never commit)
+*.xlsx
+*.xls
+*.csv
+
+# misc
+npm-debug.log*
+.DS_Store
