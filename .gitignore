@@ -21,3 +21,6 @@ data/
 # misc
 npm-debug.log*
 .DS_Store
+
+.vercel
+.env*
