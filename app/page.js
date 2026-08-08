@@ -51,9 +51,18 @@ const STATUS_MESSAGES = {
     'attention, just raise a new request and we’ll be glad to help.',
 };
 
+// Split a scripted assistant message into separate chat bubbles at blank lines,
+// so long menus/checklists arrive as small chunks instead of one wall of text.
+function toChunks(content) {
+  return String(content)
+    .split(/\n{2,}/)
+    .map((c) => ({ role: 'assistant', content: c.trim() }))
+    .filter((m) => m.content);
+}
+
 export default function ChatPage() {
   // messages: { role: 'user' | 'assistant', content, error?, typing? }
-  const [messages, setMessages] = useState([{ role: 'assistant', content: GREETING }]);
+  const [messages, setMessages] = useState(() => toChunks(GREETING));
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [language, setLanguage] = useState('English');
@@ -91,9 +100,16 @@ export default function ChatPage() {
   }, [messages]);
 
   const addAssistant = (content) =>
-    setMessages((prev) => [...prev, { role: 'assistant', content }]);
+    setMessages((prev) => [...prev, ...toChunks(content)]);
 
-  const typeList = () => requestTypes.map((t, i) => `${i + 1}. ${t}`).join('\n');
+  // Numbered service list, grouped into blank-line-separated blocks of 5 so it
+  // renders as a few small bubbles instead of one long one.
+  const typeList = () => {
+    const lines = requestTypes.map((t, i) => `${i + 1}. ${t}`);
+    const groups = [];
+    for (let i = 0; i < lines.length; i += 5) groups.push(lines.slice(i, i + 5).join('\n'));
+    return groups.join('\n\n');
+  };
 
   // Resolve a user's reply to a request type, by number or by name.
   function matchRequestType(input) {
@@ -509,7 +525,7 @@ export default function ChatPage() {
 
   function clearChat() {
     setWizard(null);
-    setMessages([{ role: 'assistant', content: GREETING }]);
+    setMessages(toChunks(GREETING));
   }
 
   // Quick-action chips — start a flow without the user having to phrase it.
