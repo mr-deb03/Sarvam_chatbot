@@ -102,14 +102,9 @@ export default function ChatPage() {
   const addAssistant = (content) =>
     setMessages((prev) => [...prev, ...toChunks(content)]);
 
-  // Numbered service list, grouped into blank-line-separated blocks of 5 so it
-  // renders as a few small bubbles instead of one long one.
-  const typeList = () => {
-    const lines = requestTypes.map((t, i) => `${i + 1}. ${t}`);
-    const groups = [];
-    for (let i = 0; i < lines.length; i += 5) groups.push(lines.slice(i, i + 5).join('\n'));
-    return groups.join('\n\n');
-  };
+  // Numbered service list as a single bubble (single newlines, no blank-line
+  // grouping) so the whole menu renders in one chat bubble.
+  const typeList = () => requestTypes.map((t, i) => `${i + 1}. ${t}`).join('\n');
 
   // Resolve a user's reply to a request type, by number or by name.
   function matchRequestType(input) {
