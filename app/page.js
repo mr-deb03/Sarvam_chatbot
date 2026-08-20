@@ -539,7 +539,15 @@ export default function ChatPage() {
   return (
     <div className="app">
       <header className="header">
-        <h1>Sarvam Associates</h1>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">SA</span>
+          <div className="brand-text">
+            <h1>Sarvam Associates</h1>
+            <p className="brand-sub">
+              <span className="status-dot" aria-hidden="true" /> Mutual-fund service desk
+            </p>
+          </div>
+        </div>
         <div className="header-actions">
           <select
             className="lang-select"
@@ -564,8 +572,17 @@ export default function ChatPage() {
       <main className="messages" ref={messagesRef} aria-live="polite">
         {messages.map((m, i) => (
           <div key={i} className={`message ${m.role}`}>
+            {m.role === 'assistant' && (
+              <span className="avatar" aria-hidden="true">SA</span>
+            )}
             <div className={`bubble ${m.error ? 'error' : ''} ${m.typing ? 'typing' : ''}`.trim()}>
-              {m.content}
+              {m.typing ? (
+                <span className="dots" aria-label="Assistant is typing">
+                  <span></span><span></span><span></span>
+                </span>
+              ) : (
+                m.content
+              )}
             </div>
           </div>
         ))}
@@ -574,10 +591,18 @@ export default function ChatPage() {
       {!wizard && (
         <div className="chips">
           <button className="chip" type="button" onClick={quickRaise} disabled={busy}>
-            📝 Raise a service request
+            <svg className="chip-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+            Raise a service request
           </button>
           <button className="chip" type="button" onClick={quickTrack} disabled={busy}>
-            🔍 Track my request
+            <svg className="chip-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            Track my request
           </button>
         </div>
       )}
@@ -593,8 +618,11 @@ export default function ChatPage() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
         />
-        <button className="send-btn" type="submit" disabled={busy}>
-          Send
+        <button className="send-btn" type="submit" disabled={busy} aria-label="Send message">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M22 2 11 13" />
+            <path d="M22 2 15 22l-4-9-9-4Z" />
+          </svg>
         </button>
       </form>
     </div>
