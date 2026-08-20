@@ -38,6 +38,46 @@ const NO = /^(n|no|nope|wrong|incorrect|nahi|nahin)\b/i;
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Native-script affirmatives/negatives/cancels so confirmations still parse when
+// the client replies in their chosen language (number/PAN/email/request-number
+// replies are already script-neutral).
+const YES_NATIVE = ['हाँ', 'हां', 'जी', 'ठीक', 'सही', 'হ্যাঁ', 'হা', 'ঠিক', 'সঠিক', 'होय', 'बरोबर', 'ஆம்', 'சரி', 'అవును', 'ఒప్పు', 'ಹೌದು', 'ಸರಿ', 'હા', 'સાચું', 'બરાબર'];
+const NO_NATIVE = ['नहीं', 'ना', 'गलत', 'ভুল', 'না', 'नाही', 'चूक', 'இல்லை', 'தவறு', 'కాదు', 'తప్పు', 'ಇಲ್ಲ', 'ತಪ್ಪು', 'ના', 'ખોટું'];
+const CANCEL_NATIVE = ['रद्द', 'बंद', 'বাতিল', 'বন্ধ', 'ரத்து', 'రద్దు', 'ರದ್ದು', 'રદ', 'બંધ'];
+
+const startsWithAny = (s, words) => words.some((w) => s.startsWith(w));
+const isYes = (t) => { const s = t.trim(); return YES.test(s) || startsWithAny(s, YES_NATIVE); };
+const isNo = (t) => { const s = t.trim(); return NO.test(s) || startsWithAny(s, NO_NATIVE); };
+const isCancel = (t) => { const s = t.trim(); return CANCEL.test(s) || startsWithAny(s, CANCEL_NATIVE); };
+
+const isEnglish = (l) => !l || l.toLowerCase() === 'english';
+
+// Translate a single chat chunk into `language` via /api/translate, caching each
+// (language, text) result so repeated menus/prompts translate only once. On any
+// failure the original English text is returned so the flow never breaks.
+const _translationCache = new Map();
+function translateText(text, language) {
+  if (isEnglish(language) || !text.trim()) return Promise.resolve(text);
+  const key = `${language}␟${text}`;
+  if (_translationCache.has(key)) return _translationCache.get(key);
+  const p = (async () => {
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, language }),
+      });
+      if (!res.ok) return text;
+      const j = await res.json();
+      return j && typeof j.text === 'string' && j.text.trim() ? j.text : text;
+    } catch {
+      return text;
+    }
+  })();
+  _translationCache.set(key, p);
+  return p;
+}
+
 // Reassuring message per status (mirrors lib/store.js STATUS_MESSAGES).
 const STATUS_MESSAGES = {
   Open:
@@ -81,6 +121,9 @@ export default function ChatPage() {
 
   const messagesRef = useRef(null);
   const inputRef = useRef(null);
+  const chainRef = useRef(Promise.resolve()); // serializes assistant messages in call order
+  const tidRef = useRef(0); // unique id per pending typing bubble
+  const langRef = useRef(language); // last language actually applied to the greeting
 
   useEffect(() => {
     fetch('/api/request-types')
@@ -99,8 +142,46 @@ export default function ChatPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  const addAssistant = (content) =>
-    setMessages((prev) => [...prev, ...toChunks(content)]);
+  // When the client switches language before the conversation starts, re-show
+  // the greeting in the new language. Guarded by a ref so mount / StrictMode
+  // re-runs don't fire, and it never wipes an active conversation.
+  useEffect(() => {
+    if (langRef.current === language) return;
+    langRef.current = language;
+    if (wizard || messages.some((m) => m.role === 'user')) return;
+    chainRef.current = Promise.resolve();
+    setMessages([]);
+    addAssistant(GREETING);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
+
+  // Append a scripted assistant message. When a non-English language is active,
+  // each bubble is translated first (showing a typing indicator meanwhile). A
+  // promise chain guarantees messages appear in the order addAssistant was
+  // called, regardless of per-message translation latency.
+  async function translateAndAppend(content, lang) {
+    const chunks = toChunks(content).map((m) => m.content);
+    if (!chunks.length) return;
+    if (isEnglish(lang)) {
+      setMessages((prev) => [...prev, ...chunks.map((c) => ({ role: 'assistant', content: c }))]);
+      return;
+    }
+    const id = ++tidRef.current;
+    setMessages((prev) => [...prev, { role: 'assistant', content: '', typing: true, tid: id }]);
+    const out = [];
+    for (const c of chunks) out.push(await translateText(c, lang));
+    setMessages((prev) => [
+      ...prev.filter((m) => m.tid !== id),
+      ...out.map((c) => ({ role: 'assistant', content: c })),
+    ]);
+  }
+
+  function addAssistant(content) {
+    const lang = language;
+    const run = () => translateAndAppend(content, lang);
+    chainRef.current = chainRef.current.then(run, run);
+    return chainRef.current;
+  }
 
   // Numbered service list where each option is separated by a blank line, so
   // toChunks() renders every single option as its own chat bubble.
@@ -177,7 +258,7 @@ export default function ChatPage() {
   }
 
   async function processWizard(text) {
-    if (CANCEL.test(text.trim())) {
+    if (isCancel(text)) {
       setWizard(null);
       addAssistant('No problem — cancelled. How else can I help?');
       return;
@@ -204,7 +285,7 @@ export default function ChatPage() {
     }
 
     if (step === 'confirm') {
-      if (YES.test(text.trim())) {
+      if (isYes(text)) {
         // Known client confirmed. If we have no email on file, collect one.
         if (!EMAIL_REGEX.test(data.email || '')) {
           setWizard({ mode: 'create', step: 'email', data });
@@ -216,7 +297,7 @@ export default function ChatPage() {
         }
         setWizard({ mode: 'create', step: 'requestType', data });
         addAssistant(`Great, ${data.clientName.split(' ')[0]}! Which service do you need? Reply with the number:\n\n${typeList()}`);
-      } else if (NO.test(text.trim())) {
+      } else if (isNo(text)) {
         setWizard({ mode: 'create', step: 'pan', data: {} });
         addAssistant("No problem — let's try again. Please re-enter your PAN number, or type 'cancel'.");
       } else {
@@ -285,9 +366,9 @@ export default function ChatPage() {
     }
 
     if (step === 'submitConfirm') {
-      if (YES.test(text.trim())) {
+      if (isYes(text)) {
         await submitRequest(data);
-      } else if (NO.test(text.trim())) {
+      } else if (isNo(text)) {
         setWizard(null);
         addAssistant("No problem — I haven't submitted anything. Say \"raise a service request\" whenever you're ready.");
       } else {
@@ -520,7 +601,9 @@ export default function ChatPage() {
 
   function clearChat() {
     setWizard(null);
-    setMessages(toChunks(GREETING));
+    chainRef.current = Promise.resolve();
+    setMessages([]);
+    addAssistant(GREETING);
   }
 
   // Quick-action chips — start a flow without the user having to phrase it.
